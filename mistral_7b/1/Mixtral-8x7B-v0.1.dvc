@@ -1,0 +1,5 @@
+outs:
+- md5: 518a5dd798f87ad701d732aee36021bb.dir
+  size: 57656126533
+  nfiles: 28
+  path: Mixtral-8x7B-v0.1

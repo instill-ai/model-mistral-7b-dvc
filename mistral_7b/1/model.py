@@ -1,82 +1,205 @@
-import json
-import time
-from pathlib import Path
+import random
 
+import ray
+import torch
+import transformers
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import numpy as np
-import triton_python_backend_utils as pb_utils
-from vllm import SamplingParams, LLM
 
-class TritonPythonModel:
-    def initialize(self, args):
-        self.logger = pb_utils.Logger
-        self.model_config = json.loads(args["model_config"])
-        model_path = str(Path(__file__).parent.absolute().joinpath('Mistral-7B-v0.1/'))
-        
-        # https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/llm.py
-        self.llm_engine = LLM(
-            model = model_path,
-            gpu_memory_utilization = 0.8,
-            tensor_parallel_size = 2
+from instill.helpers.const import DataType, TextGenerationChatInput
+from instill.helpers.ray_io import StandardTaskIO
+from instill.helpers.ray_config import (
+    instill_deployment,
+    InstillDeployable,
+)
+
+from ray_pb2 import (
+    ModelReadyRequest,
+    ModelReadyResponse,
+    ModelMetadataRequest,
+    ModelMetadataResponse,
+    ModelInferRequest,
+    ModelInferResponse,
+    InferTensor,
+)
+
+import json
+
+
+@instill_deployment
+class Mistral8x7b:
+    def __init__(self, model_path: str):
+        # model_id = "mistralai/Mixtral-8x7B-v0.1"
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            use_safetensors=True,
+            torch_dtype=torch.float16
         )
+
+    def ModelMetadata(self, req: ModelMetadataRequest) -> ModelMetadataResponse:
+        resp = ModelMetadataResponse(
+            name=req.name,
+            versions=req.version,
+            framework="python",
+            inputs=[
+                ModelMetadataResponse.TensorMetadata(
+                    name="prompt",
+                    datatype=str(DataType.TYPE_STRING.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="prompt_images",
+                    datatype=str(DataType.TYPE_STRING.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="chat_history",
+                    datatype=str(DataType.TYPE_STRING.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="system_message",
+                    datatype=str(DataType.TYPE_STRING.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="max_new_tokens",
+                    datatype=str(DataType.TYPE_UINT32.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="temperature",
+                    datatype=str(DataType.TYPE_FP32.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="top_k",
+                    datatype=str(DataType.TYPE_UINT32.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="random_seed",
+                    datatype=str(DataType.TYPE_UINT64.name),
+                    shape=[1],
+                ),
+                ModelMetadataResponse.TensorMetadata(
+                    name="extra_params",
+                    datatype=str(DataType.TYPE_STRING.name),
+                    shape=[1],
+                ),
+            ],
+            outputs=[
+                ModelMetadataResponse.TensorMetadata(
+                    name="text",
+                    datatype=str(DataType.TYPE_STRING.name),
+                    shape=[-1, -1],
+                ),
+            ],
+        )
+        return resp
+
+    def ModelReady(self, req: ModelReadyRequest) -> ModelReadyResponse:
+        resp = ModelReadyResponse(ready=True)
+        return resp
+
+    async def ModelInfer(self, request: ModelInferRequest) -> ModelInferResponse:
+        resp = ModelInferResponse(
+            model_name=request.model_name,
+            model_version=request.model_version,
+            outputs=[],
+            raw_output_contents=[],
+        )
+
+        task_text_generation_chat_input: TextGenerationChatInput = (
+            StandardTaskIO.parse_task_text_generation_chat_input(request=request)
+        )
+        print("----------------________")
+        print(task_text_generation_chat_input)
+        print("----------------________")
+
+        print("print(task_text_generation_chat.prompt")
+        print(task_text_generation_chat_input.prompt)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.prompt_images")
+        print(task_text_generation_chat_input.prompt_images)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.chat_history")
+        print(task_text_generation_chat_input.chat_history)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.system_message")
+        print(task_text_generation_chat_input.system_message)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.max_new_tokens")
+        print(task_text_generation_chat_input.max_new_tokens)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.temperature")
+        print(task_text_generation_chat_input.temperature)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.top_k")
+        print(task_text_generation_chat_input.top_k)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.random_seed")
+        print(task_text_generation_chat_input.random_seed)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.stop_words")
+        print(task_text_generation_chat_input.stop_words)
+        print("-------\n")
+
+        print("print(task_text_generation_chat.extra_params")
+        print(task_text_generation_chat_input.extra_params)
+        print("-------\n")
+
+        # if task_text_generation_chat_input.temperature <= 0.0:
+        #     task_text_generation_chat_input.temperature = 0.8
+
+        # if task_text_generation_chat_input.random_seed > 0:
+        #     random.seed(task_text_generation_chat_input.random_seed)
+        #     np.random.seed(task_text_generation_chat_input.random_seed)
         
-        output0_config = pb_utils.get_output_config_by_name(self.model_config, "text")
-        self.output0_dtype = pb_utils.triton_string_to_numpy(output0_config["data_type"])
 
-    def execute(self, requests):
-        responses = []
-        for request in requests:
-            try:
-                # request_id = random_uuid()
-                prompt = str(pb_utils.get_input_tensor_by_name(request, "query").as_numpy()[0].decode("utf-8"))
-                output_len = pb_utils.get_input_tensor_by_name(request, "len").as_numpy()[0]
-                
-                # bad_words_list, stop_words_list, random_seed are not used in this model
-                stop_words_list = str(pb_utils.get_input_tensor_by_name(request, "stop").as_numpy()[0].decode("utf-8"))
-                topk = pb_utils.get_input_tensor_by_name(request, "runtime_top_k").as_numpy()[0]
-                
-                # Reference for Sampling Parameters
-                # https://github.com/vllm-project/vllm/blob/main/vllm/sampling_params.py
-                sampling_params = SamplingParams(
-                    temperature = 0.8,
-                    max_tokens = int(output_len),
-                    top_k = int(topk),
-                    # stop = stop_words_list,
-                    # ignore_eos = False
-                )
-
-                # calculate time cost in following function call
-                t0 = time.time()
-                vllm_outputs = self.llm_engine.generate(prompt, sampling_params)
-                self.logger.log_info(f'Inference time cost {time.time()-t0}s with input lenth {len(prompt)}')
-
-                text_outputs = []
-                for vllm_output in vllm_outputs:
-                    concated_complete_output = prompt + "".join([
-                        str(complete_output.text)
-                        for complete_output in vllm_output.outputs
-                    ])
-                    text_outputs.append(concated_complete_output.encode("utf-8"))
-                triton_output_tensor = pb_utils.Tensor(
-                    "text", np.asarray(text_outputs, dtype=self.output0_dtype)
-                )
-                responses.append(pb_utils.InferenceResponse(output_tensors=[triton_output_tensor]))
+        
+        inputs = self.tokenizer(task_text_generation_chat_input.prompt, return_tensors="pt")
+        outputs = self.model.generate(**inputs, max_new_tokens=20)
+        print("output: ")
+        print(self.tokenizer.decode(outputs[0], skip_special_tokens=True))
 
 
-            except Exception as e:
-                self.logger.log_info(f"Error generating stream: {e}")
-                error = pb_utils.TritonError(f"Error generating stream: {e}")
-                triton_output_tensor = pb_utils.Tensor(
-                    "text", np.asarray(["N/A"], dtype=self.output0_dtype)
-                )
-                response = pb_utils.InferenceResponse(
-                    output_tensors=[triton_output_tensor], error=error
-                )
-                responses.append(response)
-                self.logger.log_info("The model did not receive the expected inputs")
-                raise e
-            return responses
+        sequences = []
+        for output in outputs:
+            # concated_complete_output = prompt + "".join([ # Chat model no needs to repeated the prompt
+            sequences.append(
+                {"generated_text": self.tokenizer.decode(output, skip_special_tokens=True)}
+            )
 
-        return responses
+        task_text_generation_chat_output = (
+            StandardTaskIO.parse_task_text_generation_chat_output(sequences=sequences)
+        )
 
-    def finalize(self):
-        self.logger.log_info("Issuing finalize to vllm backend")
+        resp.outputs.append(
+            InferTensor(
+                name="text",
+                shape=[1, len(sequences)],
+                datatype=str(DataType.TYPE_STRING),
+            )
+        )
+
+        resp.raw_output_contents.append(task_text_generation_chat_output)
+
+        return resp
+
+
+deployable = InstillDeployable(
+    Mistral8x7b, model_weight_or_folder_name="Mixtral-8x7B-v0.1/", use_gpu=True
+)
+
+deployable.update_max_replicas(2)
+deployable.update_min_replicas(0)
